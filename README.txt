@@ -3,7 +3,7 @@
 Offline mobile web app for a Cold Corner shop.
 
 Features:
-- 15 item slots
+- 100 item slots
 - User-defined item name
 - Buying and selling price
 - Add new stock; current stock updates automatically
