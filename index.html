@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cold Corner Billing</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f4f7fb;color:#17212b}
+header{background:#0b6efd;color:#fff;padding:18px 16px;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:22px} header small{opacity:.9}
+nav{display:flex;gap:6px;background:#fff;padding:8px;position:sticky;top:70px;z-index:4;box-shadow:0 2px 8px #0001}
+nav button{flex:1;border:0;padding:11px 4px;border-radius:9px;background:#eef3f8;font-weight:700}
+nav button.active{background:#0b6efd;color:#fff}
+main{padding:14px;max-width:900px;margin:auto}.tab{display:none}.tab.active{display:block}
+.card{background:#fff;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 2px 10px #00000010}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:700px){.grid{grid-template-columns:repeat(4,1fr)}}
+.stat{padding:14px;border-radius:12px;background:#eef6ff}.stat b{display:block;font-size:20px;margin-top:5px}
+input,select{width:100%;padding:11px;border:1px solid #ccd5df;border-radius:9px;font-size:15px;margin-top:5px}
+label{font-size:12px;font-weight:700;color:#536170}
+button{cursor:pointer}.primary{background:#0b6efd;color:#fff;border:0;border-radius:9px;padding:11px 14px;font-weight:700}
+.secondary{background:#eef3f8;border:0;border-radius:9px;padding:11px 14px;font-weight:700}
+.danger{background:#dc3545;color:#fff;border:0;border-radius:8px;padding:8px 10px}
+.row{display:flex;gap:8px;align-items:end}.row>*{flex:1}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #e8edf2;font-size:14px}
+.total{font-size:22px;font-weight:800;text-align:right;margin:12px 0}
+.muted{color:#6c7885;font-size:13px}.ok{color:#198754;font-weight:700}.low{color:#d97706;font-weight:700}.out{color:#dc3545;font-weight:700}
+.billline{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #ddd}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#17212b;color:#fff;padding:11px 16px;border-radius:9px;display:none;z-index:20}
+</style>
+</head>
+<body>
+<header><h1>🥤 Cold Corner</h1><small>Billing • Stock • Profit</small></header>
+<nav>
+<button class="active" data-tab="dashboard">Dashboard</button>
+<button data-tab="billing">Billing</button>
+<button data-tab="items">Items</button>
+<button data-tab="reports">Reports</button>
+</nav>
+
+<main>
+<section id="dashboard" class="tab active">
+<div class="grid">
+<div class="stat">Today Sales<b id="dSales">Rs. 0</b></div>
+<div class="stat">Today Profit<b id="dProfit">Rs. 0</b></div>
+<div class="stat">Bills<b id="dBills">0</b></div>
+<div class="stat">Low Stock<b id="dLow">0</b></div>
+</div>
+<div class="card"><h3>Stock Summary</h3><div id="stockSummary"></div></div>
+</section>
+
+<section id="billing" class="tab">
+<div class="card">
+<h3>New Bill</h3>
+<div class="row">
+<div><label>Item</label><select id="billItem"></select></div>
+<div style="max-width:110px"><label>Qty</label><input id="billQty" type="number" min="1" value="1"></div>
+<button class="primary" onclick="addToBill()">Add</button>
+</div>
+<div id="billLines" style="margin-top:12px"></div>
+<div class="total">Total: <span id="billTotal">Rs. 0</span></div>
+<button class="primary" onclick="saveBill()">Save Bill</button>
+<button class="secondary" onclick="clearBill()">Clear</button>
+</div>
+</section>
+
+<section id="items" class="tab">
+<div class="card">
+<h3>Item Setup (15 items)</h3>
+<p class="muted">Naam, buying price aur selling price tum khud set kar sakte ho.</p>
+<div id="itemForm"></div>
+</div>
+</section>
+
+<section id="reports" class="tab">
+<div class="card">
+<h3>Reports</h3>
+<div class="grid">
+<div class="stat">Total Sales<b id="rSales">Rs. 0</b></div>
+<div class="stat">Total Profit<b id="rProfit">Rs. 0</b></div>
+<div class="stat">Bills<b id="rBills">0</b></div>
+</div>
+</div>
+<div class="card"><h3>Sales History</h3><div id="history"></div></div>
+</section>
+</main>
+<div id="toast" class="toast"></div>
+
+<script>
+const KEY='cold_corner_v1';
+let data=JSON.parse(localStorage.getItem(KEY)||'null')||{
+ items:Array.from({length:15},(_,i)=>({name:'',buy:0,sell:0,stock:0})), bills:[]
+};
+let currentBill=[];
+const money=n=>'Rs. '+Number(n||0).toLocaleString('en-PK');
+const save=()=>localStorage.setItem(KEY,JSON.stringify(data));
+const toast=m=>{let t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',1800)};
+function setupTabs(){
+ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.getElementById(b.dataset.tab).classList.add('active');render();});
+}
+function renderItems(){
+ const f=document.getElementById('itemForm');f.innerHTML='';
+ data.items.forEach((it,i)=>{
+  const div=document.createElement('div');div.className='card';
+  div.innerHTML=`<b>Item ${i+1}</b><div class="grid">
+  <div><label>Name</label><input data-k="name" data-i="${i}" value="${esc(it.name)}" placeholder="e.g. Dew"></div>
+  <div><label>Buying Price</label><input data-k="buy" data-i="${i}" type="number" min="0" value="${it.buy}"></div>
+  <div><label>Selling Price</label><input data-k="sell" data-i="${i}" type="number" min="0" value="${it.sell}"></div>
+  <div><label>New Stock / Add</label><div class="row"><input id="add${i}" type="number" min="0" placeholder="e.g. 24"><button class="primary" onclick="addStock(${i})">Add</button></div><div class="muted">Current: ${it.stock}</div></div>
+  </div>`;
+  f.appendChild(div);
+ });
+ f.querySelectorAll('input[data-k]').forEach(inp=>inp.onchange=()=>{let i=+inp.dataset.i,k=inp.dataset.k;data.items[i][k]=k==='name'?inp.value:Number(inp.value);save();render();});
+}
+function esc(s){return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;')}
+function addStock(i){let v=Number(document.getElementById('add'+i).value);if(v>0){data.items[i].stock+=v;save();toast('Stock added');render();}}
+function populateBill(){
+ let s=document.getElementById('billItem');s.innerHTML='<option value="">Select item</option>';
+ data.items.forEach((it,i)=>{if(it.name&&it.sell>0)s.innerHTML+=`<option value="${i}">${esc(it.name)} — ${money(it.sell)} (Stock ${it.stock})</option>`});
+}
+function addToBill(){
+ let i=Number(document.getElementById('billItem').value),q=Number(document.getElementById('billQty').value);
+ if(!Number.isInteger(i)||!q||q<1)return toast('Select item and quantity');
+ let it=data.items[i],existing=currentBill.find(x=>x.i===i),already=existing?existing.q:0;
+ if(already+q>it.stock)return toast('Not enough stock');
+ if(existing)existing.q+=q;else currentBill.push({i,q});
+ renderBill();
+}
+function renderBill(){
+ let box=document.getElementById('billLines');box.innerHTML='';let total=0;
+ currentBill.forEach((x,n)=>{let it=data.items[x.i],t=x.q*it.sell;total+=t;box.innerHTML+=`<div class="billline"><span>${esc(it.name)} × ${x.q}</span><span>${money(t)} <button class="danger" onclick="removeLine(${n})">×</button></span></div>`});
+ document.getElementById('billTotal').textContent=money(total);
+}
+function removeLine(n){currentBill.splice(n,1);renderBill()}
+function clearBill(){currentBill=[];renderBill()}
+function saveBill(){
+ if(!currentBill.length)return toast('Bill empty');
+ let total=0,profit=0;
+ currentBill.forEach(x=>{let it=data.items[x.i];it.stock-=x.q;total+=x.q*it.sell;profit+=x.q*(it.sell-it.buy)});
+ data.bills.push({id:data.bills.length+1,date:new Date().toISOString(),total,profit,lines:currentBill.map(x=>({i:x.i,q:x.q}))});
+ save();currentBill=[];render();toast('Bill saved — stock updated');
+}
+function todayBills(){let d=new Date();return data.bills.filter(b=>{let x=new Date(b.date);return x.toDateString()===d.toDateString()})}
+function renderDashboard(){
+ let bs=todayBills(),sales=bs.reduce((a,b)=>a+b.total,0),profit=bs.reduce((a,b)=>a+b.profit,0),low=data.items.filter(x=>x.name&&x.stock<=5).length;
+ dSales.textContent=money(sales);dProfit.textContent=money(profit);dBills.textContent=bs.length;dLow.textContent=low;
+ let box=document.getElementById('stockSummary');box.innerHTML='';
+ data.items.filter(x=>x.name).forEach(x=>{let cls=x.stock===0?'out':x.stock<=5?'low':'ok';box.innerHTML+=`<div class="billline"><span>${esc(x.name)}</span><span class="${cls}">${x.stock===0?'OUT OF STOCK':x.stock+' in stock'}</span></div>`});
+ if(!box.innerHTML)box.innerHTML='<p class="muted">Items setup mein products add karo.</p>';
+}
+function renderReports(){
+ let sales=data.bills.reduce((a,b)=>a+b.total,0),profit=data.bills.reduce((a,b)=>a+b.profit,0);
+ rSales.textContent=money(sales);rProfit.textContent=money(profit);rBills.textContent=data.bills.length;
+ let h=document.getElementById('history');h.innerHTML='';
+ [...data.bills].reverse().slice(0,30).forEach(b=>{h.innerHTML+=`<div class="billline"><span>Bill #${b.id}<br><span class="muted">${new Date(b.date).toLocaleString()}</span></span><span>${money(b.total)}<br><span class="ok">Profit ${money(b.profit)}</span></span></div>`});
+ if(!h.innerHTML)h.innerHTML='<p class="muted">No bills yet.</p>';
+}
+function render(){renderItems();populateBill();renderBill();renderDashboard();renderReports()}
+setupTabs();render();
+</script>
+</body>
+</html>
